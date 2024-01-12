@@ -8,6 +8,13 @@ void BitString::init()
     this->padding = 8;
 }
 
+void BitString::reinit()
+{
+    this->reset_pos();
+    this->string = (uint8_t *)realloc(this->string, sizeof(uint8_t) * this->byte_size);
+    this->padding = 8;
+}
+
 BitString::BitString()
 {
     this->byte_size = 1;
@@ -24,6 +31,41 @@ void BitString::reset_pos()
 uint64_t BitString::get_bit_size() const
 {
     return (this->byte_size * 8) - this->padding;
+}
+
+uint64_t BitString::get_size() const
+{
+    return this->byte_size;
+}
+
+const uint8_t *BitString::get_string() const
+{
+    return (const uint8_t *)this->string;
+}
+
+BitString BitString::get_last_byte() const
+{
+    BitString res;
+
+    *res.string = *(this->string + this->byte_size - 1);
+    res.padding = this->padding;
+
+    return res;
+}
+
+uint8_t BitString::get_byte(uint64_t offset) const
+{
+    if (offset > this->byte_size - 1)
+    {
+        throw std::runtime_error("offset so larg");
+    }
+
+    return *(this->string + offset);
+}
+
+uint8_t BitString::get_byte_padding() const
+{
+    return this->padding;
 }
 
 bool BitString::operator<<(uint8_t val)
@@ -86,20 +128,17 @@ bool BitString::operator>>(bit &dst)
 
 uint8_t BitString::operator>>(uint8_t &dst)
 {
-    if (this->byte_pos == this->byte_size - 1)
-    {
-        throw std::overflow_error("end of byte string");
-    }
-
-    dst = *(this->string + this->byte_pos++);
+    uint8_t res = 0;
 
     if (this->byte_pos == this->byte_size)
     {
         this->byte_pos = 0;
-        return this->padding;
+        res = this->padding;
     }
 
-    return 0;
+    dst = *(this->string + this->byte_pos++);
+
+    return res;
 }
 
 bool BitString::operator==(BitString &other)
@@ -142,6 +181,66 @@ void sort(std::vector<T> &arr)
             }
         }
     }
+}
+
+BitString BitString::operator+(BitString &other)
+{
+    BitString res = *this;
+    uint64_t d_byte_pos = other.byte_pos;
+    uint64_t d_bit_pos = other.bit_pos;
+    bit val;
+
+    if (other.get_bit_size() < 1)
+    {
+        return res;
+    }
+
+    other.reset_pos();
+
+    while (!other.operator>>(val))
+    {
+        res << val;
+    }
+
+    res << val;
+
+    other.byte_pos = d_byte_pos;
+    other.bit_pos = d_bit_pos;
+
+    return res;
+}
+
+void load_into_bit_string(BitString &bs, uint8_t data, uint8_t padding)
+{
+    bs.byte_size = 1;
+
+    bs.reinit();
+
+    *bs.string = data >> padding;
+    bs.padding = padding;
+}
+
+void load_into_bit_string(BitString &bs, const char *data, uint64_t size, uint8_t padding)
+{
+    if (size < 1)
+    {
+        throw std::runtime_error("invalid size");
+    }
+
+    bs.byte_size = size;
+
+    bs.reinit();
+
+    bs.padding = padding;
+
+    uint64_t ind = 0;
+
+    for (; ind < size - 1; ind++)
+    {
+        *(bs.string + ind) = *(data + ind);
+    }
+
+    *(bs.string + ind) = *(data + ind) >> padding;
 }
 
 template <typename T>
@@ -487,4 +586,128 @@ void VirtualTree::load_huffman_bit_string_exception_into_virtual_tree(VirtualTre
             ptr_node = ptr_node->get_left_node();
         }
     }
+}
+
+BitString encode(BitString &data, Tree::HuffmanTree &hft)
+{
+    if (!data.get_size() && !data.get_bit_size())
+    {
+        throw std::runtime_error("no any data");
+    }
+
+    if (data.get_byte_padding() % 8)
+    {
+        throw std::runtime_error("data has padding");
+    }
+
+    BitString res, path;
+    uint8_t loc_byte;
+
+    std::vector<Tree::HuffmanKey> keys = hft.get_keys();
+
+    if (!keys.size())
+    {
+        throw std::runtime_error("no any key");
+    }
+
+    data.reset_pos();
+
+    for (uint64_t data_ind = 0; data_ind < data.get_size(); data_ind++)
+    {
+        bool is_find = false;
+
+        data >> loc_byte;
+
+        uint64_t key_ind = 0;
+
+        for (; key_ind < keys.size(); key_ind++)
+        {
+            if (keys.at(key_ind).key.chr == loc_byte)
+            {
+                path = keys.at(key_ind).node->get_path();
+                is_find = true;
+
+                break;
+            }
+        }
+
+        if (!is_find)
+        {
+            throw std::runtime_error("key not found");
+        }
+
+        res = res + path;
+    }
+
+    return res;
+}
+
+BitString decode(BitString &data, VirtualTree::HuffmanTree &hft)
+{
+    if (!data.get_bit_size())
+    {
+        throw std::runtime_error("no any data");
+    }
+
+    std::vector<VirtualTree::HuffmanKey> keys = hft.get_keys();
+
+    if (hft.get_keys().size() < 2)
+    {
+        throw std::runtime_error("tree is incomplete");
+    }
+
+    data.reset_pos();
+
+    bit loc_bit;
+    bool can_read, padding;
+    BitString res, chr;
+    VirtualTree::HuffmanNode *ptr_node = hft.get_root_node();
+
+    do
+    {
+        can_read = !(data >> loc_bit);
+        padding = true;
+
+        if (loc_bit)
+        {
+            ptr_node = ptr_node->get_right_node();
+        }
+        else
+        {
+            ptr_node = ptr_node->get_left_node();
+        }
+
+        if (ptr_node->has_value())
+        {
+            bool is_find = false;
+
+            for (uint64_t ind = 0; ind < keys.size(); ind++)
+            {
+                if (keys.at(ind).node == ptr_node)
+                {
+                    load_into_bit_string(chr, keys.at(ind).key.chr, 0);
+                    is_find = true;
+
+                    break;
+                }
+            }
+
+            if (!is_find)
+            {
+                throw std::runtime_error("key not found");
+            }
+
+            ptr_node = hft.get_root_node();
+            padding = false;
+
+            res = res + chr;
+        }
+    } while (can_read);
+
+    if (padding)
+    {
+        throw std::runtime_error("data has padding");
+    }
+
+    return res;
 }

@@ -4,6 +4,10 @@
 
 typedef bool bit;
 
+class BitString;
+
+void load_into_bit_string(BitString &, const char *, uint64_t, uint8_t);
+
 class BitString
 {
 private:
@@ -14,18 +18,28 @@ private:
     uint8_t bit_pos = 0;
 
     void init();
+    void reinit();
 
 public:
     BitString();
 
     void reset_pos();
     size_t get_bit_size() const;
+    uint64_t get_size() const;
+    const uint8_t *get_string() const;
+    BitString get_last_byte() const;
+    uint8_t get_byte(uint64_t) const;
+    uint8_t get_byte_padding() const;
 
     bool operator<<(uint8_t);
     bool operator>>(bit &);
     uint8_t operator>>(uint8_t &);
     bool operator==(BitString &);
     bool operator!=(BitString &);
+    BitString operator+(BitString &);
+
+    friend void load_into_bit_string(BitString &, uint8_t, uint8_t);
+    friend void load_into_bit_string(BitString &, const char *, uint64_t, uint8_t);
 };
 
 template <typename T>
@@ -154,3 +168,6 @@ namespace VirtualTree
         friend void VirtualTree::load_huffman_bit_string_exception_into_virtual_tree(VirtualTree::HuffmanTree &, BitString &);
     };
 }
+
+BitString encode(BitString &, Tree::HuffmanTree &);
+BitString decode(BitString &, VirtualTree::HuffmanTree &);
