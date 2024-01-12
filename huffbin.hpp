@@ -6,6 +6,7 @@ typedef bool bit;
 
 class BitString;
 
+void load_into_bit_string(BitString &, uint8_t, uint8_t);
 void load_into_bit_string(BitString &, const char *, uint64_t, uint8_t);
 
 class BitString
